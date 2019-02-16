@@ -133,17 +133,8 @@ def my_word2vec(data):
 	data = data.map(lambda x: my_embedding(x, logger))
 
 	logger.info('save add_vocab......')
-	with open('../models/add_vocab.json', 'w') as f:
+	with open('../models/' + project_name + '_add_vocab.json', 'w') as f:
 		json.dump(add_vocab, f)
-
-	return data
-
-
-def generate_feature(data):
-	logger = get_logger('extract feature', main_dir + project_name + '/' + 'extract_feature.log')
-
-	# todo
-
 
 	return data
 
@@ -155,25 +146,21 @@ def run_main():
 	logger_main.info('load model successfully')
 
 	xlsx_file = main_dir + project_name + '/' + project_name + '.xlsx'
-	# 读取数据
+	# 1 读取数据
 	logger_main.info('load data from xsl......')
 	nlp_data = load_data_from_xsl(xlsx_file)
 
-	# 分词、去除停用词
+	# 2 分词、去除停用词
 	logger_main.info('preprocess for data......')
 	nlp_data = preprocess(nlp_data)
 
-	# 对desc字段进行词嵌入
+	# 3 对desc字段进行词嵌入
 	logger_main.info('word embedding for data.....')
 	nlp_data['desc'] = my_word2vec(nlp_data['desc'])
 
-	# 将desc字段中的词向量进行卷积操作
-	logger_main.info('extract feature for data.....')
-	nlp_data['desc'] = generate_feature(nlp_data['desc'])
-
-	# 将特征提取结果存储为aspectj_report_feature.json
-	logger_main.info('save feature result to file......')
-	feature_file = main_dir + project_name + '/' + project_name + '_report_feature.json'
+	# 4 将词嵌入结果存储为aspectj_report_vec.json
+	logger_main.info('save report vectors to file......')
+	feature_file = main_dir + project_name + '/' + project_name + '_report_vec.json'
 	nlp_data.to_json(feature_file, orient='records')
 
 
