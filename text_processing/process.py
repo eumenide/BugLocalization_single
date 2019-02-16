@@ -15,6 +15,7 @@ from gensim.models import KeyedVectors
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
 total_files = {'aspectj': 1406, 'eclipseUI': 15179, 'jdt': 12682, 'swt': 8119, 'tomcat': 2355}
+total_reports = {'aspectj': 593, 'eclipseUI': 15179, 'jdt': 12682, 'swt': 8119, 'tomcat': 2355}
 
 logger_main = None
 
@@ -24,8 +25,9 @@ project_name = 'aspectj'
 
 model = None
 
-with open('../models/add_vocab.json', 'r') as load_f:
-	add_vocab = json.load(load_f)
+# with open('../models/' + project_name + '_add_vocab.json', 'r+') as load_f:
+# add_vocab = json.load(load_f)
+add_vocab = {}
 
 
 def get_logger(logger_name, log_file):
@@ -89,7 +91,7 @@ def tokenize_and_stopwords(text='', stopworddic=None, pattern=None):
 
 def load_data_from_xsl(file_name):
 	nlp_data = pd.read_excel(file_name, sheet_name=0, header=0, usecols=[1, 2, 3],
-	                         converters={'bug_id': str, 'summary': str, 'description': str}, nrows=3)
+	                         converters={'bug_id': str, 'summary': str, 'description': str})
 	nlp_data.fillna(' ', inplace=True)
 
 	return nlp_data
@@ -111,7 +113,7 @@ temp = 1
 
 def my_embedding(data, logger):
 	global temp
-	logger.info(project_name + '    ' + str(temp) + ' / ' + total_files[project_name])
+	logger.info(project_name + '    ' + str(temp) + ' / ' + str(total_reports[project_name]))
 	vec = []
 	for string in data:
 		if string in model.vocab:
@@ -122,7 +124,7 @@ def my_embedding(data, logger):
 			ran = list(np.random.uniform(-1, 1, 100))
 			vec.append(ran)
 			add_vocab[string] = ran
-			logger.info('add_vocab    ' + string)
+			logger.info('add_vocab :    ' + string)
 
 	temp = temp + 1
 	return vec
@@ -140,10 +142,6 @@ def my_word2vec(data):
 
 
 def run_main():
-	logger_main.info('load enwiki model......')
-	global model
-	model = KeyedVectors.load_word2vec_format('../models/enwiki_20180420_100d.txt.bz2', binary=False)
-	logger_main.info('load model successfully')
 
 	xlsx_file = main_dir + project_name + '/' + project_name + '.xlsx'
 	# 1 读取数据
@@ -153,6 +151,11 @@ def run_main():
 	# 2 分词、去除停用词
 	logger_main.info('preprocess for data......')
 	nlp_data = preprocess(nlp_data)
+
+	logger_main.info('load enwiki model......')
+	global model
+	model = KeyedVectors.load_word2vec_format('../models/enwiki_20180420_100d.txt.bz2', binary=False)
+	logger_main.info('load model successfully')
 
 	# 3 对desc字段进行词嵌入
 	logger_main.info('word embedding for data.....')
@@ -171,6 +174,3 @@ if __name__ == '__main__':
 	run_main()
 
 	logger_main.info('text process ended successfully ^_^')
-
-
-
