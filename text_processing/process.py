@@ -14,7 +14,7 @@ from gensim.models import KeyedVectors
 
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
-total_files = {'aspectj': 1406, 'eclipseUI': 15179, 'jdt': 12682, 'swt': 8119, 'tomcat': 2355}
+total_files = {'aspectj': 1405, 'eclipseUI': 15179, 'jdt': 12682, 'swt': 8119, 'tomcat': 2355}
 total_reports = {'aspectj': 593, 'eclipseUI': 15179, 'jdt': 12682, 'swt': 8119, 'tomcat': 2355}
 
 logger_main = None

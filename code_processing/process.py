@@ -7,19 +7,24 @@ import logging
 import json
 import nltk
 import math
+import numpy as np
 
 from collections import Counter
+from gensim.models import KeyedVectors
+from nltk.corpus import stopwords
+
 
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
-total_files = {'aspectj': 1406, 'eclipseUI': 15179, 'jdt': 12682, 'swt': 8119, 'tomcat': 2355}
+total_files = {'aspectj': 1405, 'eclipseUI': 15179, 'jdt': 12682, 'swt': 8119, 'tomcat': 2355}
 
 main_dir = '../datasets/'
 project_name = 'aspectj'
+stopwords_dic = set(stopwords.words('english')) | {'.', ':', '(', ')', '\n'}
 
 logger_main = None
 
-# 状态
+# trim去掉注释时标记的状态
 S_INIT = 0
 S_SLASH = 1
 S_BLOCK_COMMENT = 2
@@ -195,7 +200,7 @@ def tf_calculate(project):
 	logger = get_logger('tf calculate for code', main_dir + project + '/tf_calculate.log')
 	logger.info('tf calculating start......')
 	input_dir = main_dir + project + '/sourceFile/'
-	output_dir = main_dir + project + '/sourceFile_pre'
+	output_dir = main_dir + project + '/sourceFile_pre/'
 
 	temp = 1
 	term_counts = []
@@ -203,13 +208,16 @@ def tf_calculate(project):
 
 	# 1 处理项目下的每一个文件
 	for file in file_list:
+		# if temp > 3:
+		# 	break
+
 		input_file = input_dir + file + '.java'
 		output_file = output_dir + file + '.txt'
 
 		logger.info(str(temp) + ' / ' + str(total_num))
 		# 2 对文件进行trim操作，删掉文件中所有注释
 		logger.info('trim for file......')
-		file_lines = trim_file(input_file)
+		file_lines = trim_file(input_file).split('\n')
 
 		counters = Counter()
 		# 3~4 对文件每一行进行分词、去除停用词；并计算每个term的词频
@@ -247,7 +255,7 @@ def generate_idf(word, tf_list):
 
 
 def generate_tfidf(project, term_counts):
-	# todo 计算每个term的TF-IDF权重
+	# 计算每个term的TF-IDF权重
 	logger = get_logger('tf-idf calculate for term', main_dir + project + '/weight_calculate.log')
 	logger.info('tf-idf calculating start......')
 
@@ -280,10 +288,72 @@ def generate_tfidf(project, term_counts):
 	return weight_list
 
 
-def code_word2vec(weight_list):
-	# todo 对code进行行平均词嵌入
+def code_word2vec(project, weight_list):
+	# 对code进行行平均词嵌入
+	logger = get_logger('code word2vec', main_dir + project + '/code_word2vec.log')
+	logger.info('word embedding for code start.......')
 
-	return
+	input_dir = main_dir + project + '/sourceFile_pre/'
+	# output_dir = main_dir + project + '/'
+	model_file = '../models/enwiki_20180420_100d.txt.bz2'
+	add_vocab_file = '../models/' + project + '_add_vocab.json'
+	# 加载model和add_vocab
+	logger.info('load add_vocab from file.......')
+	with open(add_vocab_file, 'r') as load_f:
+		add_vocab = json.load(load_f)
+
+	logger.info('load enwiki word2vec from file.......')
+	model = KeyedVectors.load_word2vec_format(model_file, binary=False)
+
+	index = 0
+	project_vec = []
+	total_num = len(file_list)
+	# 对每个文件进行词嵌入
+	for file in file_list:
+		logger.info(str(index + 1) + ' / ' + str(total_num))
+
+		weight_dic = weight_list[index]
+		input_file = input_dir + file + '.txt'
+
+		file_vec = []
+		with open(input_file, 'r') as f:
+			file_lines = f.readlines()
+
+		# 通过加权平均对每行进行词嵌入
+		for line in file_lines:
+			word_list = line.strip('\n').split(' ')
+			line_len = len(word_list)
+
+			line_vec = np.zeros(shape=[100])
+
+			for word in word_list:
+				if word in model.vocab:
+					line_vec += np.array(model[word]) * weight_dic[word]
+				elif word in add_vocab:
+					line_vec += np.array(add_vocab[word]) * weight_dic[word]
+				else:
+					ran = np.random.uniform(-1, 1, 100)
+					line_vec += ran * weight_dic[word]
+					add_vocab[word] = list(ran)
+					logger.info('add vocab :     ' + word)
+
+			line_vec /= line_len
+			file_vec.append(list(line_vec))
+
+		project_vec.append({'file_id': index, 'file_vec': file_vec})
+		index += 1
+
+	# 将修改的add_vocab_file存储
+	with open(add_vocab_file, 'w') as f:
+		json.dump(add_vocab, f)
+
+	return project_vec
+
+
+def save_vec(project, project_vec):
+	output_file = main_dir + project + '/' + project + '_code_vec.json'
+	with open(output_file, 'w') as f:
+		json.dump(project_vec, f)
 
 
 def run_main(project):
@@ -301,11 +371,11 @@ def run_main(project):
 
 	# 12 词嵌入
 	logger_main.info('word2vec for code......')
-	code_word2vec(weight_list)
+	project_vec = code_word2vec(project, weight_list)
 
 	# 15 将词嵌入结果存储为_code_vec.json
 	logger_main.info('save code vectors to file......')
-
+	save_vec(project, project_vec)
 
 	return
 
