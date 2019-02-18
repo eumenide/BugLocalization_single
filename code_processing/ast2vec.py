@@ -91,7 +91,7 @@ def tokenize_and_stopwords(text='', stopworddic=None, pattern=None):
 
 def my_ast2vec(project):
 	# 将ast转换为vector
-	logger = get_logger('ast word embedding', main_dir + project + '/' + '_ast2vec.log')
+	logger = get_logger('ast word embedding', main_dir + project + '/' + project + '_ast2vec.log')
 	logger.info('word embedding for code ast starting......')
 
 	input_file = main_dir + project + '/' + project + '_ast.json'
@@ -137,11 +137,10 @@ def my_ast2vec(project):
 def save_vec(project, project_ast_vec):
 	output_file = main_dir + project + '/' + project + '_ast_vec.json'
 	with open(output_file, 'w') as f:
-		json.dump(project_ast_vec, f)
+		json.dump(project_ast_vec, f, cls=MyEncoder)
 
 
 def run_main(project):
-	# todo
 	# 进行词嵌入
 	logger_main.info('word embedding for code ast......')
 	project_ast_vec = my_ast2vec(project)
