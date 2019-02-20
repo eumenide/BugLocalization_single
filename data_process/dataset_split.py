@@ -44,7 +44,7 @@ class MyEncoder(json.JSONEncoder):
 			return int(obj)
 		elif isinstance(obj, np.floating):
 			return float(obj)
-		elif isinstance(obj. np.ndarray):
+		elif isinstance(obj.np.ndarray):
 			return obj.tolist()
 		else:
 			return super(MyEncoder, self).default(obj)
@@ -54,6 +54,7 @@ def load_label(project):
 	# 读入label数据
 	label_file = main_dir + project + '/' + project + '_label.json'
 	project_label = pd.read_json(label_file, orient='records', dtype=False)
+	project_label.rename(columns={'report_timestamp': 'time'}, inplace=True)
 
 	return project_label
 
@@ -69,13 +70,25 @@ def load_report_vec(project):
 
 def concatenate_data(label, report):
 	# 合并数据
+	logger = get_logger('concatenate data', main_dir + project_name + '/conca_data.log')
+	logger.info('concatenate data starting......')
+	logger.info('origin label data #    ' + str(len(label)))
+	logger.info('origin report data #    ', str(len(report)))
+
 	new_data = pd.merge(label, report, on=['bug_id'])
+	logger.info('data # after merge    ' + str(len(new_data)))
+
+	new_data.reset_index(drop=True, inplace=True)
+	logger.info('data # after reset index    ' + str(len(new_data)))
 
 	return new_data
 
 
 def split_random(project, data):
-	# todo 随机划分数据集
+	# 随机划分数据集
+	logger = get_logger('split datasets randomly', main_dir + project + '/' + 'split_random.log')
+	logger.info('split datasets randomly starting......')
+
 	train_file = main_dir + project + '/' + project + '_train.json'
 	test_file = main_dir + project + '/' + project + '_test.json'
 	valid_file = main_dir + project + '/' + project + '_valid.json'
@@ -84,21 +97,65 @@ def split_random(project, data):
 	cnt_test = round(len(data) * ratio_test, 0)
 	cnt_train = len(data) - cnt_valid - cnt_test
 
+	logger.info('train data #     ' + str(cnt_train))
+	logger.info('test data #      ' + str(cnt_test))
+	logger.info('valid data #      ' + str(cnt_valid))
+
 	# 随机打乱数据集
-	np.random.shuffle(data)
+	data = data.sample(frac=1.0)
+	data = data.reset_index(drop=True)
+	train_data = data.loc[0: (cnt_train - 1)]
+	test_data = data.loc[cnt_train: (cnt_train + cnt_test - 1)]
+	valid_data = data.loc[(cnt_test + cnt_train):]
+
+	logger.info('train data #     ' + str(len(train_data)))
+	logger.info('test data #      ' + str(len(test_data)))
+	logger.info('valid data #      ' + str(len(valid_data)))
+
+	train_data.to_json(train_file, orient='records')
+	test_data.to_json(test_file, orient='records')
+	valid_data.to_json(valid_file, orient='records')
 
 	return
 
 
 def split_time(project, data):
-	# todo 按时间划分数据集
+	# 按时间划分数据集
+	logger = get_logger('split datasets according to time', main_dir + project + '/' + 'split_time.log')
+	logger.info('split datasets according to time starting......')
+
+	train_file = main_dir + project + '/' + project + '_train_t.json'
+	test_file = main_dir + project + '/' + project + '_test_t.json'
+	valid_file = main_dir + project + '/' + project + '_valid_t.json'
+
+	cnt_valid = round(len(data) * ratio_valid, 0)
+	cnt_test = round(len(data) * ratio_test, 0)
+	cnt_train = len(data) - cnt_valid - cnt_test
+
+	logger.info('train data #     ' + str(cnt_train))
+	logger.info('test data #      ' + str(cnt_test))
+	logger.info('valid data #      ' + str(cnt_valid))
+
+	# 按时间排序
+	data = data.sort_values(by="time", ascending=False)
+	data = data.reset_index(drop=True)
+
+	test_data = data.loc[0: cnt_test - 1]
+	valid_data = data.loc[cnt_test: cnt_test + cnt_valid - 1]
+	train_data = data.loc[cnt_valid + cnt_test:]
+
+	logger.info('train data #     ' + str(len(train_data)))
+	logger.info('test data #      ' + str(len(test_data)))
+	logger.info('valid data #      ' + str(len(valid_data)))
+
+	train_data.to_json(train_file, orient='records')
+	test_data.to_json(test_file, orient='records')
+	valid_data.to_json(valid_file, orient='records')
 
 	return
 
 
 def run_main(project):
-	#
-
 	# 1 读取_label.json数据
 	logger_main.info('load label data from file......')
 	project_label = load_label(project)
@@ -123,32 +180,10 @@ def run_main(project):
 
 
 if __name__ == '__main__':
-	arr = np.arange(18).reshape((9, 2))
-	print(arr)
-	np.random.shuffle(arr)
-	print(arr)
-	# tmp_a = load_label(project_name)
-	# print(len(tmp_a))
-	#
-	# tmp_b = load_report_vec(project_name)
-	# print(len(tmp_b))
-	#
-	# tmp_c = concatenate_data(tmp_a, tmp_b)
-	# print(len(tmp_c))
-	#
-	# print(tmp_c.loc[0])
-	# np.random.shuffle(tmp_c)
-	# print(tmp_c.loc[0])
-	#
-	# cnt_valid = round(len(tmp_c) * ratio_valid, 0)
-	# print(cnt_valid)
-	# cnt_test = round(len(tmp_c) * ratio_test, 0)
-	# print(cnt_test)
-	# cnt_train = len(tmp_c) - cnt_valid - cnt_test
-	# print(cnt_train)
-	# logger_main = get_logger('run_main', main_dir + project_name + '/' + 'dataset_main.log')
-	# logger_main.info('split datasets starting.............')
-	#
-	# run_main(project_name)
-	#
-	# logger_main.info('split datasets ended successfully ^_^')
+
+	logger_main = get_logger('run_main', main_dir + project_name + '/' + 'dataset_main.log')
+	logger_main.info('split datasets starting.............')
+
+	run_main(project_name)
+
+	logger_main.info('split datasets ended successfully ^_^')
