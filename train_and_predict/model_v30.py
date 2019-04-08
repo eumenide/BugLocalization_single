@@ -71,10 +71,11 @@ class MyEncoder(json.JSONEncoder):
 class DataGenerator(Sequence):
 	'Generate data for keras'
 
-	def __init__(self, reports, codes, labels=None, batch_size=64, is_y=True, name=''):
+	def __init__(self, reports, codes, asts, labels=None, batch_size=256, is_y=True, name=''):
 		'Initialization'
 		self.reports = reports
 		self.codes = codes
+		self.asts = asts
 		self.is_y = is_y
 		self.name = name
 		if self.is_y:
@@ -84,8 +85,10 @@ class DataGenerator(Sequence):
 		self.batch_size = batch_size
 		self.report_index = 0
 		self.code_index = 0
+		self.ast_index = 0
 		self.code_len = len(self.codes)
 		self.report_len = len(self.reports)
+		self.ast_len = len(self.asts)
 		self.on_epoch_end()
 
 	def __len__(self):
@@ -96,6 +99,7 @@ class DataGenerator(Sequence):
 		'Update indexs after each epoch'
 		self.report_index = 0
 		self.code_index = 0
+		self.ast_index = 0
 		if self.is_y:
 			self.label_index = 0
 
@@ -104,7 +108,9 @@ class DataGenerator(Sequence):
 		# 计算第item次batch的code、report以及label的初始index
 		tmp_counts = int(np.ceil(self.code_len / self.batch_size))
 		# self.code_index = int(np.floor(item * self.batch_size % self.code_len))
-		self.code_index = int(np.floor((item % tmp_counts) % self.code_len))
+		# self.code_index = int(np.floor((item % tmp_counts) % self.code_len))
+		self.code_index = int(np.floor(item % tmp_counts))
+		self.ast_index = self.code_index
 		# self.report_index = int(np.floor(item * self.batch_size / self.code_len))
 		self.report_index = int(np.floor(item / tmp_counts))
 		if self.is_y:
@@ -112,7 +118,8 @@ class DataGenerator(Sequence):
 
 		# 根据index获取数据集
 		report_tmp = self.reports[self.report_index]
-		code_tmp = self.codes[self.code_index: self.code_index + self.batch_size]
+		code_tmp = self.codes[self.code_index * self.batch_size: (self.code_index + 1) * self.batch_size]
+		ast_tmp = self.asts[self.ast_index * self.batch_size: (self.ast_index + 1) * self.batch_size]
 
 		# 将report数据复制batch_size份，并同时将label转换成二分类格式
 		reports = report_tmp[np.newaxis, :]
@@ -124,9 +131,9 @@ class DataGenerator(Sequence):
 			label = label_tmp[self.code_index: self.code_index + len(code_tmp)]
 			label = to_categorical(label, num_classes=2)
 			label = label.reshape((-1, 2))
-			return [reports, code_tmp], label
+			return [reports, code_tmp, ast_tmp], label
 		else:
-			return [reports, code_tmp]
+			return [reports, code_tmp, ast_tmp]
 
 
 def load_data():
@@ -172,7 +179,15 @@ def load_data():
 	code_input = sequence.pad_sequences(code_data['file_vec'], maxlen=MAX_LEN, dtype='float32', padding='post',
 	                                    truncating='post', value=0)
 
-	return (train_x, train_y), (test_x, test_y), (valid_x, valid_y), code_input
+	logger_main.info('load code ast vectors from file......')
+	ast_file = main_dir + project + '/' + project + '_ast_vec.json'
+	ast_data = pd.read_json(ast_file, orient='records', dtype=False)
+
+	logger_main.info('padding ast vectors......')
+	ast_input = sequence.pad_sequences(ast_data['file_ast'], maxlen=MAX_LEN, dtype='float32', padding='post',
+	                                   truncating='post', value=0)
+
+	return (train_x, train_y), (test_x, test_y), (valid_x, valid_y), code_input, ast_input
 
 
 def train_model():
@@ -180,6 +195,7 @@ def train_model():
 	# 定义Inputs
 	report_input = Input(shape=[MAX_LEN, MAX_DIM], name='report')
 	code_input = Input(shape=[MAX_LEN, MAX_DIM], name='code')
+	ast_input = Input(shape=[MAX_LEN, MAX_DIM], name='ast')
 
 	# bug report卷积层 三个filter_size
 	convs = []
@@ -209,12 +225,24 @@ def train_model():
 	# flatten层
 	flatten_code = Reshape((1, 300))(merge_code)
 
-	# 将相同维度的report code和source code特征进行连接
-	merge_all = concatenate([flatten_report, flatten_code], axis=1)
+	# code ast卷积层 三个filter_size
+	convs = []
+	filter_sizes = [2, 3, 4]
+	for fzs in filter_sizes:
+		conv_1 = Conv1D(filters=100, kernel_size=fzs, activation='relu', padding='valid')(ast_input)
+		pool_1 = MaxPooling1D((MAX_LEN - fzs + 1), strides=1, padding='valid')(conv_1)
+		convs.append(pool_1)
 
-	print(merge_all.shape)
-	flatten_all = Reshape((2, 300, 1))(merge_all)
-	print(flatten_all.shape)
+	# 将code ast三个分支通过concatenate的方式拼接在一起
+	merge_ast = concatenate(convs, axis=1)
+
+	# flatten层
+	flatten_ast = Reshape((1, 300))(merge_ast)
+
+	# 将相同维度的report code和source code特征进行连接
+	merge_all = concatenate([flatten_report, flatten_code, flatten_ast], axis=1)
+
+	flatten_all = Reshape((3, 300, 1))(merge_all)
 
 	# 以下为CNN分类器
 	# 卷积层
@@ -222,7 +250,7 @@ def train_model():
 	print(conv_classify.shape)
 
 	# 池化层
-	pool_classify = MaxPooling2D((2, 300), strides=1, padding='valid')(conv_classify)
+	pool_classify = MaxPooling2D((3, 300), strides=1, padding='valid')(conv_classify)
 
 	# flatten_classify = Reshape((100, ))(pool_classify)
 	flatten_classify = Flatten()(pool_classify)
@@ -234,7 +262,7 @@ def train_model():
 
 	output = Dense(2, activation='sigmoid')(full_con)
 
-	model = Model([report_input, code_input], output)
+	model = Model([report_input, code_input, ast_input], output)
 
 	model.compile(loss="binary_crossentropy", optimizer="adam", metrics=['accuracy'])
 
@@ -252,7 +280,7 @@ def predict_result(model, test_generator, testY):
 
 	predict_res = {'predict:': list(predictY), 'real:': list(testY)}
 
-	predict_file = main_dir + project + '/' + project + '_predict_v11.json'
+	predict_file = main_dir + project + '/' + project + '_predict_v30.json'
 	with open(predict_file, 'w') as f:
 		json.dump(predict_res, f, cls=MyEncoder)
 
@@ -262,16 +290,16 @@ def predict_result(model, test_generator, testY):
 def run_main():
 	# 主函数
 	logger_main.info('load data from file......')
-	(trainX, trainY), (testX, testY), (validX, validY), code_input = load_data()
+	(trainX, trainY), (testX, testY), (validX, validY), code_input, ast_input = load_data()
 
 	logger_main.info('train model for data......')
 	model = train_model()
 
 	logger_main.info('fit in model......')
-	train_generator = DataGenerator(trainX, code_input, labels=trainY, name='train')
-	valid_generator = DataGenerator(validX, code_input, labels=validY, name='valid')
-	test_generator = DataGenerator(testX, code_input, is_y=False, name='test')
-	eval_generator = DataGenerator(testX, code_input, labels=testY, name='eval')
+	train_generator = DataGenerator(trainX, code_input, ast_input, labels=trainY, name='train')
+	valid_generator = DataGenerator(validX, code_input, ast_input, labels=validY, name='valid')
+	test_generator = DataGenerator(testX, code_input, ast_input, is_y=False, name='test')
+	eval_generator = DataGenerator(testX, code_input, ast_input, labels=testY, name='eval')
 
 	model.fit_generator(generator=train_generator,
 	                    validation_data=valid_generator,
@@ -284,7 +312,7 @@ def run_main():
 	#           shuffle=False)
 
 	logger_main.info('save model......')
-	model.save("../models/aspectj_model_v20.h5")
+	model.save("../models/aspectj_model_v30.h5")
 
 	logger_main.info('predict for test data......')
 	predict_result(model, test_generator, testY)
@@ -298,9 +326,9 @@ def run_main():
 
 
 if __name__ == '__main__':
-	logger_main = get_logger('run_main', main_dir + project + '/' + 'train_v20.log')
-	logger_main.info('train model v2.0 starting.............')
+	logger_main = get_logger('run_main', main_dir + project + '/' + 'train_v30.log')
+	logger_main.info('train model v3.0 starting.............')
 
 	run_main()
 
-	logger_main.info('train model v2.0 ended successfully ^_^')
+	logger_main.info('train model v3.0 ended successfully ^_^')

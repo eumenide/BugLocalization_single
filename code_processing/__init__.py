@@ -3,16 +3,18 @@
 import numpy as np
 from keras.utils import to_categorical
 
-a = [[0, 1, 1], [1, 0, 0], [0, 0, 1]]
+a = [[0, 1], [1, 0], [0, 1]]
+b = [[1, 0], [0, 1], [1, 0], [0, 1]]
 
-b = [[1, 0], [0, 1]]
 a = np.array(a)
-print(to_categorical(a, 2))
 b = np.array(b)
-c = np.array(a)[np.newaxis, :]
-for i in range(3):
-	d = a[np.newaxis, :]
-	c = np.vstack((c, d))
+c = to_categorical(a[0:2], 2)
+d = to_categorical(b[0:3], 2)
+c = c.reshape((-1,2))
+d = d.reshape((-1,2))
+
+print(c)
+print(d)
 # print(a)
 # print(c)
 
